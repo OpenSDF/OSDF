@@ -29,24 +29,16 @@ import java.util.Set;
  * An interface for path selection algorithms.
  */
 public interface PathSelectionInterface {
-    Path pickBestPossiblePath(Set<Path> paths,
-                              PortNumber notToPort,
-                              DefaultPolicy policy);
+
 
     Path pickRandomPath(Set<Path> paths,
                         DefaultPolicy policy);
 
-    Path pickPathOnDemand(Set<Path> paths,
-                          PortNumber notToPort,
-                          DefaultPolicy policy,
-                          DefaultPath endToEndPath);
 
     Path getEndtoEndPath(Set<Path> endToEndPaths,
                          DefaultPolicy policy);
 
     PathSelectionAlgos getPathSelectionAlgo(String pathSelectionAlgo);
 
-    Path pickEcmpBasedPath(List<Path> paths,
-                           DefaultPolicy policy,
-                           InboundPacket pkt);
+
 }

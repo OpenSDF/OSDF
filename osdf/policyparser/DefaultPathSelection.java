@@ -138,111 +138,7 @@ public class DefaultPathSelection
 
     }
 
-    /**
-     * pick a path based on ECMP algorithm.
-     *
-     * @param paths  paths list
-     * @param policy policy
-     * @param pkt    Inbound packet
-     * @return a path
-     */
-    public Path pickEcmpBasedPath(List<Path> paths, DefaultPolicy policy, InboundPacket pkt) {
-        Ethernet ethPkt = pkt.parsed();
-        IPv4 ipv4Packet = (IPv4) ethPkt.getPayload();
-        IpAddress dstIp =
-                IpAddress.valueOf(ipv4Packet.getDestinationAddress());
-        IpAddress srcIp =
-                IpAddress.valueOf(ipv4Packet.getSourceAddress());
 
-        byte ipv4Protocol = ipv4Packet.getProtocol();
-        int srcPort = 0;
-        int dstPort = 0;
-        if (ipv4Protocol == IPv4.PROTOCOL_TCP) {
-            TCP tcpPacket = (TCP) ipv4Packet.getPayload();
-            srcPort = tcpPacket.getSourcePort();
-            dstPort = tcpPacket.getDestinationPort();
-
-
-        } else if (ipv4Protocol == IPv4.PROTOCOL_UDP) {
-            UDP udpPacket = (UDP) ipv4Packet.getPayload();
-            srcPort = udpPacket.getSourcePort();
-            dstPort = udpPacket.getDestinationPort();
-
-        }
-
-        int result = srcIp.hashCode() + dstIp.hashCode() + srcPort + dstPort;
-
-        return paths.get(result % paths.size());
-
-    }
-
-    /**
-     * Returns best possible path based on a set of shortest path.
-     *
-     * @param paths     a set of paths.
-     * @param notToPort not to port
-     * @param policy    a policy
-     * @return a path
-     */
-    public Path pickBestPossiblePath(Set<Path> paths, PortNumber notToPort, DefaultPolicy policy) {
-        Path selectedPath = null;
-
-        for (Path path : paths) {
-
-            selectedPath = path;
-            if (!path.src().port().equals(notToPort)) {
-
-                return path;
-            }
-
-        }
-        return selectedPath;
-    }
-
-    /**
-     * <p>
-     * Returns a path on demand based on constraints which are specified in
-     * a given policy.
-     *
-     * @param paths        paths
-     * @param notToPort    not to port
-     * @param policy       a policy
-     * @param endToEndPath end to end path
-     * @return a path
-     */
-    public Path pickPathOnDemand(Set<Path> paths,
-                                 PortNumber notToPort,
-                                 DefaultPolicy policy,
-                                 DefaultPath endToEndPath) {
-        Path selectedPath = null;
-
-        boolean deviceExistance = true;
-
-        List<Link> endPathLinks = endToEndPath.links();
-        //log.debug("End path links" + endPathLinks.toString());
-
-        List<Link> pathLinks = null;
-
-        for (Path path : paths) {
-
-            pathLinks = path.links();
-            //log.debug("Path links ==>" + pathLinks.toString());
-            if (endPathLinks.containsAll(pathLinks)) {
-                selectedPath = path;
-                if (!path.src().port().equals(notToPort)) {
-
-                    log.debug("Selected path after packet" + selectedPath);
-                    return path;
-                }
-            }
-
-
-        }
-
-        return selectedPath;
-
-
-    }
 
 
     /**
@@ -280,24 +176,5 @@ public class DefaultPathSelection
         return selectedEndPath;
     }
 
-    /**
-     * Returns all possible paths.
-     *
-     * @param currentTopology current topology
-     * @param srcDeviceId     source device ID
-     * @param dstDeviceId     dst device ID
-     * @return a set of paths
-     */
-
-    public Set<Path> getAllPaths(Topology currentTopology,
-                                 DeviceId srcDeviceId,
-                                 DeviceId dstDeviceId) {
-        Set<Path> allPossiblePaths = new HashSet<>();
-        TopologyVertex srcVertex;
-        TopologyVertex dstVertex;
-        TopologyGraph topologyGraph = topologyService.getGraph(currentTopology);
-        return allPossiblePaths;
-
-    }
 
 }
