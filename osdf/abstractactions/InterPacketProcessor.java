@@ -36,6 +36,8 @@ import org.onosproject.core.CoreService;
 import org.onosproject.incubator.net.osdf.interrouteconfigs.InterRouteConfigurationService;
 import org.onosproject.incubator.net.osdf.policies.DefaultPolicy;
 import org.onosproject.incubator.net.osdf.policies.Policy;
+import org.onosproject.incubator.net.osdf.policystorage.PolicyEvent;
+import org.onosproject.incubator.net.osdf.policystorage.PolicyListener;
 import org.onosproject.incubator.net.osdf.policystorage.PolicyService;
 import org.onosproject.incubator.net.osdf.statuscodes.StatusCodes;
 import org.onosproject.net.ConnectPoint;
@@ -56,11 +58,12 @@ import org.slf4j.Logger;
 
 import java.nio.ByteBuffer;
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 import static org.slf4j.LoggerFactory.getLogger;
 
 /**
- * Packet Processor for inter-domain abstract operations.
+ * Packet Processor for high level abstract operations.
  */
 
 
@@ -89,8 +92,14 @@ public class InterPacketProcessor extends AbstractAction implements RouteActionI
     protected NetworkConfigService configService;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected IntraRouteActionInterface intraRouteActionInterface;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected InterRouteActionInterface interRouteActionInterface;
 
+
+
+    private PolicyListener policyListener = new InnerPolicyListener();
     private ApplicationId appId;
     private RoutingPacketProcessor processor = new RoutingPacketProcessor();
 
@@ -100,6 +109,7 @@ public class InterPacketProcessor extends AbstractAction implements RouteActionI
         log.info("Started");
         appId = coreService.registerApplication("org.onosproject.PolicyBasedPacketProcessor");
         packetService.addProcessor(processor, org.onosproject.net.packet.PacketProcessor.director(3));
+        policyService.addListener(policyListener);
         requestIntercepts();
     }
 
@@ -155,6 +165,27 @@ public class InterPacketProcessor extends AbstractAction implements RouteActionI
 
 
     /**
+     * An implementation of policy listener interface.
+     */
+
+    private class InnerPolicyListener implements PolicyListener {
+
+        @Override
+        public void event(PolicyEvent event) {
+
+
+            switch (event.type()) {
+                case INSTALL_REQ:
+                    //log.info("INSTALL REQ");
+                    break;
+                default:
+                    //log.info("No policy event");
+                    break;
+            }
+        }
+    }
+
+    /**
      * Packet processor responsible for extracting low level match fields
      * based on current active polices.
      */
@@ -180,6 +211,7 @@ public class InterPacketProcessor extends AbstractAction implements RouteActionI
 
             InboundPacket pkt = context.inPacket();
             Ethernet ethPkt = pkt.parsed();
+
 
 
             if (isControlPacket(ethPkt)) {
@@ -246,21 +278,35 @@ public class InterPacketProcessor extends AbstractAction implements RouteActionI
                     String pktSrcRegion;
                     String pktDstRegion;
 
-                    DefaultPolicy policy;
-                    ActionList action;
+                    DefaultPolicy policy = null;
+                    ActionList action = null;
                     //log.info("IPv4 packet");
                     if (checkCurrentPolicies() == StatusCodes.STATUS_OK) {
 
                         policyIterator = policyService.getCurrentPolicies().iterator();
                         while (policyIterator.hasNext()) {
 
-                            if (policyIterator.hasNext()) {
-                                policy = (DefaultPolicy) policyIterator.next();
-                            } else {
-                                continue;
+
+
+                            try {
+                                if (policyIterator.hasNext()) {
+                                    policy = (DefaultPolicy) policyIterator.next();
+                                }
+                            }
+                            catch (NoSuchElementException e)
+                            {
+                                return;
                             }
 
-                            action = policy.getAction();
+
+
+                            try {
+                                action = policy.getAction();
+                            }
+                            catch (NullPointerException e)
+                            {
+                                return;
+                            }
                             pktSrcRegion = config.getRegion(ip4SrcPrefix);
                             pktDstRegion = config.getRegion(ip4DstPrefix);
                             policysrcRegion = policy.getSrcRegion();
@@ -271,7 +317,7 @@ public class InterPacketProcessor extends AbstractAction implements RouteActionI
                                     || (policysrcRegion.id().toString().equals(pktDstRegion)
                                     && policydstRegion.id().toString().equals(pktSrcRegion)))) {
                                 interRouteActionInterface.interRouteProcess(policy, context);
-
+                                //log.info("inter-route is called");
                             }
 
                         }
@@ -282,6 +328,10 @@ public class InterPacketProcessor extends AbstractAction implements RouteActionI
                     break;
 
             }
+
+
+
+
 
 
         }

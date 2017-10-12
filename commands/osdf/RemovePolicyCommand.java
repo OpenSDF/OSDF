@@ -40,10 +40,11 @@ public class RemovePolicyCommand extends AbstractShellCommand {
     //@Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     //protected PolicyService policyService;
 
-    private final Logger log = getLogger(getClass());
     @Argument(index = 0, name = "policyID", description = "PolicyID",
             required = true, multiValued = false)
     private String policyID = null;
+
+    private final Logger log = getLogger(getClass());
 
     @Override
     protected void execute() {
@@ -53,26 +54,10 @@ public class RemovePolicyCommand extends AbstractShellCommand {
         PolicyListener policyListener = new InnerPolicyListener();
 
         policyService.addListener(policyListener);
-        Iterator<Policy> policyIterator = policyService.getCurrentPolicies().iterator();
-        while (policyIterator.hasNext()) {
-
-            log.info(String.valueOf(policyIterator.next().getPolicyId().getPolicyId()));
-
-        }
-
-
         DefaultPolicy policy = (DefaultPolicy) policyService.getPolicy(policyID);
-
-
-        //log.info(String.valueOf(policy.getTrafficProfile().getApplicationType()));
         policyService.removeCurrentPolicy(policy);
 
-        policyIterator = policyService.getCurrentPolicies().iterator();
-        while (policyIterator.hasNext()) {
 
-            log.info(String.valueOf(policyIterator.next().getPolicyId().getPolicyId()));
-
-        }
 
 
     }

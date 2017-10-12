@@ -122,7 +122,6 @@ public class InterRouteAction
 
     /**
      * Service activation method.
-     *
      * @param context component context
      */
     @Activate
@@ -185,175 +184,177 @@ public class InterRouteAction
     }
 
 
-    /**
-     * Local inter route function to install OpenFlow rules based
-     * on high level policies.
-     *
-     * @param pkt     Inbound packet
-     * @param ethPkt  Ethernet packet
-     * @param context packet context
-     */
-    private void localInterRoute(DefaultPolicy policy,
-                                 InboundPacket pkt,
-                                 Ethernet ethPkt,
-                                 PacketContext context) {
-
-        IPv4 ipv4Packet = (IPv4) ethPkt.getPayload();
-        IpAddress dstIp =
-                IpAddress.valueOf(ipv4Packet.getDestinationAddress());
-
-        MacAddress srcMac = ethPkt.getSourceMAC();
-        MacAddress dstMac = null;
-        ConnectPoint dstConnectPoint;
-        for (Host host : hostService.getHostsByIp(dstIp)) {
-            if (host.mac() != null) {
-                dstMac = host.mac();
-                dstConnectPoint = host.location();
-                break;
-            }
-        }
-        if (dstMac == null) {
-            hostService.startMonitoringIp(dstIp);
-            return;
-        }
 
 
-        List<Link> pathLinks = null;
-        HostId dstId = HostId.hostId(dstMac);
-        HostId srcId = HostId.hostId(srcMac);
-        Host dst = hostService.getHost(dstId);
-        Host src = hostService.getHost(srcId);
+        /**
+         * Local inter route function to install OpenFlow rules based
+         * on high level policies.
+         *
+         * @param pkt     Inbound packet
+         * @param ethPkt  Ethernet packet
+         * @param context packet context
+         */
+        private void localInterRoute(DefaultPolicy policy,
+                                     InboundPacket pkt,
+                                     Ethernet ethPkt,
+                                     PacketContext context) {
 
+            IPv4 ipv4Packet = (IPv4) ethPkt.getPayload();
+            IpAddress dstIp =
+                    IpAddress.valueOf(ipv4Packet.getDestinationAddress());
 
-        TrafficTreatment treatment = null;
-        TrafficSelector.Builder builderSelector;
-        Path endPath = null;
-
-        int priority = policy.getPriority();
-        if (src.location().deviceId().equals(dst.location().deviceId())) {
-            builderSelector = policyParser.interBuildTrafficSelector(pkt, ethPkt, dstMac, policy);
-            if (builderSelector != null) {
-                treatment = DefaultTrafficTreatment.
-                        builder()
-                        .setOutput(dst.location().port())
-                        .build();
-                DefaultFlowRule flowRule;
-                flowRule = (DefaultFlowRule) DefaultFlowRule.builder()
-                        .withPriority(policy.getPriority())
-                        .makeTemporary(flowTimeout).forDevice(dst.location().deviceId())
-                        .withSelector(builderSelector.build()).withTreatment(treatment)
-                        .fromApp(appId).forTable(TABLE_ID)
-                        .build();
-                flowRuleService.applyFlowRules(flowRule);
-                policyService.addFlowRule(policy, flowRule);
-            }
-
-                            /*try {
-                                Thread.sleep(10 * policyService.getRulesCount(policy));
-
-                            } catch (InterruptedException e) {
-                                log.info(e.getLocalizedMessage());
-                            }*/
-            forwardPacketToDst(context, dst.location());
-            //context.treatmentBuilder().setOutput(dst.location().port());
-            //context.send();
-
-        } else {
-            Set<Path> endToEndPaths =
-                    topologyService.getPaths(topologyService.currentTopology(),
-                            src.location().deviceId(),
-                            dst.location().deviceId());
-            switch (policy.getPathSelectionAlgo()) {
-                case ON_DEMAND:
-                    endPath = pathSelection.getEndtoEndPath(endToEndPaths, policy);
+            MacAddress srcMac = ethPkt.getSourceMAC();
+            MacAddress dstMac = null;
+            ConnectPoint dstConnectPoint;
+            for (Host host : hostService.getHostsByIp(dstIp)) {
+                if (host.mac() != null) {
+                    dstMac = host.mac();
+                    dstConnectPoint = host.location();
                     break;
-                case RANDOM:
-                    endPath = pathSelection.pickRandomPath(endToEndPaths, policy);
-                    break;
-                case BEST_POSSIBLE_PATH:
-                    endPath = pathSelection.getEndtoEndPath(endToEndPaths, policy);
-                    break;
-                default:
-                    endPath = pathSelection.getEndtoEndPath(endToEndPaths, policy);
-                    break;
-            }
-            pathLinks = endPath.links();
-            Link lastLink = pathLinks.get(pathLinks.size() - 1);
-            Link firstLink = pathLinks.get(0);
-            for (Link link : pathLinks) {
-
-                builderSelector = policyParser.interBuildTrafficSelector(pkt,
-                        ethPkt,
-                        dstMac,
-                        policy);
-                if (builderSelector != null && link.equals(firstLink)) {
-                    treatment = DefaultTrafficTreatment.
-                            builder().setEthDst(dstMac)
-                            .setOutput(link.src().port())
-                            .build();
-                    DefaultFlowRule flowRule;
-                    flowRule = (DefaultFlowRule) DefaultFlowRule.builder()
-                            .withPriority(priority).makeTemporary(flowTimeout)
-                            .forDevice(link.src().deviceId()).withSelector(builderSelector.build())
-                            .withTreatment(treatment)
-                            .fromApp(appId).forTable(TABLE_ID)
-                            .build();
-                    flowRuleService.applyFlowRules(flowRule);
-                    policyService.addFlowRule(policy, flowRule);
-                    if (lastLink.equals(link)) {
-                        treatment = DefaultTrafficTreatment.
-                                builder()
-                                .setOutput(dst.location().port())
-                                .build();
-                        flowRule = (DefaultFlowRule) DefaultFlowRule.builder()
-                                .withPriority(priority)
-                                .makeTemporary(flowTimeout)
-                                .forDevice(dst.location().deviceId())
-                                .withSelector(builderSelector.build())
-                                .withTreatment(treatment)
-                                .fromApp(appId)
-                                .forTable(TABLE_ID)
-                                .build();
-                        flowRuleService.applyFlowRules(flowRule);
-                        policyService.addFlowRule(policy, flowRule);
-                    }
-
-                } else if (builderSelector != null) {
-
-                    treatment = DefaultTrafficTreatment.
-                            builder()
-                            .setOutput(link.src().port())
-                            .build();
-
-                    DefaultFlowRule flowRule;
-                    flowRule = (DefaultFlowRule) DefaultFlowRule
-                            .builder()
-                            .withPriority(priority).makeTemporary(flowTimeout)
-                            .forDevice(link.src().deviceId()).withSelector(builderSelector.build())
-                            .withTreatment(treatment).fromApp(appId)
-                            .forTable(TABLE_ID)
-                            .build();
-
-                    flowRuleService.applyFlowRules(flowRule);
-                    policyService.addFlowRule(policy, flowRule);
-                    if (lastLink.equals(link)) {
-                        treatment = DefaultTrafficTreatment
-                                .builder()
-                                .setOutput(dst.location().port())
-                                .build();
-                        flowRule = (DefaultFlowRule) DefaultFlowRule
-                                .builder()
-                                .withPriority(priority).makeTemporary(flowTimeout)
-                                .forDevice(dst.location().deviceId())
-                                .withSelector(builderSelector.build())
-                                .withTreatment(treatment).fromApp(appId)
-                                .forTable(TABLE_ID)
-                                .build();
-                        flowRuleService.applyFlowRules(flowRule);
-                        policyService.addFlowRule(policy, flowRule);
-                    }
                 }
             }
+            if (dstMac == null) {
+                hostService.startMonitoringIp(dstIp);
+                return;
+            }
+
+
+            List<Link> pathLinks = null;
+            HostId dstId = HostId.hostId(dstMac);
+            HostId srcId = HostId.hostId(srcMac);
+            Host dst = hostService.getHost(dstId);
+            Host src = hostService.getHost(srcId);
+
+
+            TrafficTreatment treatment = null;
+            TrafficSelector.Builder builderSelector;
+            Path endPath = null;
+
+            int priority = policy.getPriority();
+                        if (src.location().deviceId().equals(dst.location().deviceId())) {
+                            builderSelector = policyParser.interBuildTrafficSelector(pkt, ethPkt, dstMac, policy);
+                            if (builderSelector != null) {
+                                treatment = DefaultTrafficTreatment.
+                                        builder()
+                                        .setOutput(dst.location().port())
+                                        .build();
+                                DefaultFlowRule flowRule;
+                                flowRule = (DefaultFlowRule) DefaultFlowRule.builder()
+                                        .withPriority(policy.getPriority())
+                                        .makeTemporary(flowTimeout).forDevice(dst.location().deviceId())
+                                        .withSelector(builderSelector.build()).withTreatment(treatment)
+                                        .fromApp(appId).forTable(TABLE_ID)
+                                        .build();
+                                flowRuleService.applyFlowRules(flowRule);
+                                policyService.addFlowRule(policy, flowRule);
+                            }
+
+                            /*try {
+                                Thread.sleep(10 * policyService.getRulesCount(policy));
+
+                            } catch (InterruptedException e) {
+                                log.info(e.getLocalizedMessage());
+                            }*/
+                            forwardPacketToDst(context,dst.location());
+                            //context.treatmentBuilder().setOutput(dst.location().port());
+                            //context.send();
+
+                        } else {
+                            Set<Path> endToEndPaths =
+                                    topologyService.getPaths(topologyService.currentTopology(),
+                                            src.location().deviceId(),
+                                            dst.location().deviceId());
+                            switch (policy.getPathSelectionAlgo()) {
+                                case ON_DEMAND:
+                                    endPath = pathSelection.getEndtoEndPath(endToEndPaths, policy);
+                                    break;
+                                case RANDOM:
+                                    endPath = pathSelection.pickRandomPath(endToEndPaths, policy);
+                                    break;
+                                case BEST_POSSIBLE_PATH:
+                                    endPath = pathSelection.getEndtoEndPath(endToEndPaths, policy);
+                                    break;
+                                default:
+                                    endPath = pathSelection.getEndtoEndPath(endToEndPaths, policy);
+                                    break;
+                            }
+                            pathLinks = endPath.links();
+                            Link lastLink = pathLinks.get(pathLinks.size() - 1);
+                            Link firstLink = pathLinks.get(0);
+                            for (Link link : pathLinks) {
+
+                                builderSelector = policyParser.interBuildTrafficSelector(pkt,
+                                        ethPkt,
+                                        dstMac,
+                                        policy);
+                                if (builderSelector != null && link.equals(firstLink)) {
+                                    treatment = DefaultTrafficTreatment.
+                                            builder().setEthDst(dstMac)
+                                            .setOutput(link.src().port())
+                                            .build();
+                                    DefaultFlowRule flowRule;
+                                    flowRule = (DefaultFlowRule) DefaultFlowRule.builder()
+                                            .withPriority(priority).makeTemporary(flowTimeout)
+                                            .forDevice(link.src().deviceId()).withSelector(builderSelector.build())
+                                            .withTreatment(treatment)
+                                            .fromApp(appId).forTable(TABLE_ID)
+                                            .build();
+                                    flowRuleService.applyFlowRules(flowRule);
+                                    policyService.addFlowRule(policy, flowRule);
+                                    if (lastLink.equals(link)) {
+                                        treatment = DefaultTrafficTreatment.
+                                            builder()
+                                            .setOutput(dst.location().port())
+                                            .build();
+                                        flowRule = (DefaultFlowRule) DefaultFlowRule.builder()
+                                                .withPriority(priority)
+                                                .makeTemporary(flowTimeout)
+                                                .forDevice(dst.location().deviceId())
+                                                .withSelector(builderSelector.build())
+                                                .withTreatment(treatment)
+                                                .fromApp(appId)
+                                                .forTable(TABLE_ID)
+                                                .build();
+                                        flowRuleService.applyFlowRules(flowRule);
+                                        policyService.addFlowRule(policy, flowRule);
+                                    }
+
+                                } else if (builderSelector != null) {
+
+                                    treatment = DefaultTrafficTreatment.
+                                            builder()
+                                            .setOutput(link.src().port())
+                                            .build();
+
+                                    DefaultFlowRule flowRule;
+                                    flowRule = (DefaultFlowRule) DefaultFlowRule
+                                            .builder()
+                                            .withPriority(priority).makeTemporary(flowTimeout)
+                                            .forDevice(link.src().deviceId()).withSelector(builderSelector.build())
+                                            .withTreatment(treatment).fromApp(appId)
+                                            .forTable(TABLE_ID)
+                                            .build();
+
+                                    flowRuleService.applyFlowRules(flowRule);
+                                    policyService.addFlowRule(policy, flowRule);
+                                    if (lastLink.equals(link)) {
+                                        treatment = DefaultTrafficTreatment
+                                                .builder()
+                                                .setOutput(dst.location().port())
+                                                .build();
+                                        flowRule = (DefaultFlowRule) DefaultFlowRule
+                                            .builder()
+                                            .withPriority(priority).makeTemporary(flowTimeout)
+                                            .forDevice(dst.location().deviceId())
+                                            .withSelector(builderSelector.build())
+                                            .withTreatment(treatment).fromApp(appId)
+                                            .forTable(TABLE_ID)
+                                            .build();
+                                        flowRuleService.applyFlowRules(flowRule);
+                                        policyService.addFlowRule(policy, flowRule);
+                                    }
+                                }
+                            }
                             /*try {
                                 Thread.sleep(10 * policyService.getRulesCount(policy));
 
@@ -361,16 +362,16 @@ public class InterRouteAction
                                 log.info(e.getLocalizedMessage());
                             }*/
 
-            forwardPacketToDst(context, firstLink.src());
-            //context.treatmentBuilder().setOutput(firstLink.src().port());
-            //context.send();
+                            forwardPacketToDst(context,firstLink.src());
+                            //context.treatmentBuilder().setOutput(firstLink.src().port());
+                            //context.send();
+
+                        }
+
 
         }
 
-
-    }
-
-    private void forwardPacketToDst(PacketContext context,
+        private void forwardPacketToDst(PacketContext context,
                                     ConnectPoint connectPoint) {
         TrafficTreatment treatment = DefaultTrafficTreatment.builder()
                 .setOutput(connectPoint.port()).build();
@@ -378,37 +379,37 @@ public class InterRouteAction
                 new DefaultOutboundPacket(connectPoint.deviceId(), treatment,
                         context.inPacket().unparsed());
         packetService.emit(packet);
-    }
-
-
-    /**
-     * Inter-route processor.
-     *
-     * @param context packet processing context
-     */
-
-    public void interRouteProcess(DefaultPolicy policy, PacketContext context) {
-
-        InboundPacket pkt = context.inPacket();
-        Ethernet ethPkt = pkt.parsed();
-
-
-        if (ethPkt == null) {
-            return;
-        }
-
-        switch (EthType.EtherType.lookup(ethPkt.getEtherType())) {
-            case IPV4:
-                localInterRoute(policy, pkt, ethPkt, context);
-
-                break;
-            default:
-                break;
-
         }
 
 
-    }
+        /**
+         * Inter-route processor.
+         *
+         * @param context packet processing context
+         */
+
+        public void interRouteProcess(DefaultPolicy policy, PacketContext context) {
+
+            InboundPacket pkt = context.inPacket();
+            Ethernet ethPkt = pkt.parsed();
+
+
+            if (ethPkt == null) {
+                return;
+            }
+
+            switch (EthType.EtherType.lookup(ethPkt.getEtherType())) {
+                case IPV4:
+                    localInterRoute(policy, pkt, ethPkt, context);
+
+                    break;
+                default:
+                    break;
+
+            }
+
+
+        }
 
 
 }

@@ -17,6 +17,7 @@
 package org.onosproject.incubator.net.osdf.abstractactions;
 
 
+import com.google.common.collect.Maps;
 import org.apache.felix.scr.annotations.Activate;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
@@ -31,6 +32,7 @@ import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
 import org.onosproject.incubator.net.osdf.interrouteconfigs.InterRouteConfigurationService;
 import org.onosproject.incubator.net.osdf.policies.DefaultPolicy;
+import org.onosproject.incubator.net.osdf.policies.DefaultPolicyId;
 import org.onosproject.incubator.net.osdf.policies.Policy;
 import org.onosproject.incubator.net.osdf.policystorage.PolicyEvent;
 import org.onosproject.incubator.net.osdf.policystorage.PolicyListener;
@@ -49,7 +51,10 @@ import org.onosproject.net.region.RegionService;
 import org.osgi.service.component.ComponentContext;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.Map;
+import java.util.NoSuchElementException;
 
 import static org.slf4j.LoggerFactory.getLogger;
 
@@ -85,9 +90,13 @@ public class IntraPacketProcessor extends AbstractAction implements RouteActionI
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected IntraRouteActionInterface intraRouteActionInterface;
 
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected InterRouteActionInterface interRouteActionInterface;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected FlowRuleService flowRuleService;
+
+
 
 
     private PolicyListener policyListener = new InnerPolicyListener();
@@ -156,6 +165,8 @@ public class IntraPacketProcessor extends AbstractAction implements RouteActionI
     }
 
 
+
+
     /**
      * An implementation of policy listener interface.
      */
@@ -184,17 +195,16 @@ public class IntraPacketProcessor extends AbstractAction implements RouteActionI
     private class RoutingPacketProcessor implements org.onosproject.net.packet.PacketProcessor {
 
         Iterator<Policy> policyIterator;
+        Iterator<Map.Entry<DefaultPolicyId, Policy>> policyIterator2;
+
 
         private StatusCodes checkCurrentPolicies() {
-            policyIterator = policyService.getCurrentPolicies().iterator();
-            if (policyIterator.hasNext()) {
-
+            if(!policyService.getCurrentPolicyMap().isEmpty())
+            {
                 return StatusCodes.STATUS_OK;
-
             }
 
             return StatusCodes.STATUS_ERR;
-
         }
 
 
@@ -206,8 +216,9 @@ public class IntraPacketProcessor extends AbstractAction implements RouteActionI
             short type = ethPkt.getEtherType();
 
 
-            log.info("incoming intra-route");
-            if (isControlPacket(ethPkt)) {
+
+            if (isControlPacket(ethPkt))
+            {
                 return;
             }
 
@@ -215,63 +226,76 @@ public class IntraPacketProcessor extends AbstractAction implements RouteActionI
                 return;
             }
 
-            if (type == Ethernet.TYPE_ARP) {
+            if(type == Ethernet.TYPE_ARP)
+            {
+                return;
+            }
+            if (context.isHandled()) {
                 return;
             }
 
-
-            log.info("after here");
 
             Ip4Prefix ip4SrcPrefix = null;
             Ip4Prefix ip4DstPrefix = null;
             IPv4 ipv4Packet = (IPv4) ethPkt.getPayload();
 
             ip4SrcPrefix =
-                    Ip4Prefix.valueOf(ipv4Packet.getSourceAddress(),
-                            24);
+                        Ip4Prefix.valueOf(ipv4Packet.getSourceAddress(),
+                                24);
             ip4DstPrefix =
-                    Ip4Prefix.valueOf(ipv4Packet.getDestinationAddress(),
-                            24);
+                        Ip4Prefix.valueOf(ipv4Packet.getDestinationAddress(),
+                                24);
 
             Region policysrcRegion;
             Region policydstRegion;
             String pktSrcRegion;
             String pktDstRegion;
 
-            DefaultPolicy policy;
-            ActionList action;
+            DefaultPolicy policy = null;
+            ActionList action = null;
+
+            Map<DefaultPolicyId, Policy> tempMap = Maps.newConcurrentMap();
 
             if (checkCurrentPolicies() == StatusCodes.STATUS_OK) {
 
-                policyIterator = policyService.getCurrentPolicies().iterator();
-                while (policyIterator.hasNext()) {
+                tempMap = policyService.getCurrentPolicyMap();
+                policyIterator =  tempMap.values().iterator();
 
+            while (policyIterator.hasNext()) {
+
+                try {
                     if (policyIterator.hasNext()) {
                         policy = (DefaultPolicy) policyIterator.next();
-                    } else {
-                        continue;
                     }
+                }
+                catch (NoSuchElementException e)
+                {
+                    return;
+                }
 
+
+                try {
                     action = policy.getAction();
+                }
+                catch (NullPointerException e)
+                {
+                    return;
+                }
                     pktSrcRegion = config.getRegion(ip4SrcPrefix);
                     pktDstRegion = config.getRegion(ip4DstPrefix);
                     policysrcRegion = policy.getSrcRegion();
                     policydstRegion = policy.getDstRegion();
 
-                    log.info("source name:" + policysrcRegion.name().toString());
-                    log.info("dst name" + policydstRegion.name().toString());
-                    log.info("source name packet:" + pktSrcRegion.toString());
-                    log.info("dst name packet" + pktDstRegion.toString());
-
-                    log.info("here 2");
                     if ((action == ActionList.INTRA_ROUTE)
                             && policysrcRegion.id().toString().equals(pktSrcRegion)
                             && policydstRegion.id().toString().equals(pktDstRegion)) {
 
-                        log.info("call intra route process");
+                        //log.info("intra route is called");
                         intraRouteActionInterface.intraRouteProcess(policy, context);
 
                     }
+
+
 
 
                 }

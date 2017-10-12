@@ -73,7 +73,7 @@ import static org.slf4j.LoggerFactory.getLogger;
 public class IntraRouteAction extends AbstractAction implements IntraRouteActionInterface {
 
 
-    private static final int DEFAULT_TIMEOUT = 10;
+    private static final int DEFAULT_TIMEOUT = 100;
     private static final int DEFAULT_PRIORITY = 10;
     private static final int TABLE_ID = 0;
     private final Logger log = getLogger(getClass());
@@ -181,32 +181,30 @@ public class IntraRouteAction extends AbstractAction implements IntraRouteAction
     }
 
 
+
     public void intraRouteProcess(DefaultPolicy policy, PacketContext context) {
 
-        InboundPacket pkt = context.inPacket();
-        Ethernet ethPkt = pkt.parsed();
+            InboundPacket pkt = context.inPacket();
+            Ethernet ethPkt = pkt.parsed();
 
 
-        log.info("intra process is called");
 
-        if (isControlPacket(ethPkt)) {
-            return;
-        }
-        if (ethPkt == null) {
-            return;
-        }
-
+            if (isControlPacket(ethPkt)) {
+                return;
+            }
+            if (ethPkt == null) {
+                return;
+            }
 
 
         HostId dstId = HostId.hostId(ethPkt.getDestinationMAC());
-        HostId srcId = HostId.hostId(ethPkt.getSourceMAC());
-        Host dst = hostService.getHost(dstId);
-        Host src = hostService.getHost(srcId);
-        List<Link> pathLinks = null;
-        if (src == null || dst == null) {
-            return;
-        }
-
+            HostId srcId = HostId.hostId(ethPkt.getSourceMAC());
+            Host dst = hostService.getHost(dstId);
+            Host src = hostService.getHost(srcId);
+            List<Link> pathLinks = null;
+            if (src == null || dst == null) {
+                return;
+            }
 
 
         TrafficTreatment treatment;
@@ -214,105 +212,121 @@ public class IntraRouteAction extends AbstractAction implements IntraRouteAction
         Path endPath;
 
         if (src.location().deviceId().equals(dst.location().deviceId())) {
-            builderSelector = policyParser.intraBuildTrafficSelector(pkt,
-                    ethPkt,
-                    null,
-                    policy);
-            if (builderSelector != null) {
-                treatment = DefaultTrafficTreatment.
-                        builder()
-                        .setOutput(dst.location().port())
-                        .build();
-                DefaultFlowRule flowRule;
-                flowRule = (DefaultFlowRule) DefaultFlowRule.builder()
-                        .withPriority(policy.getPriority())
-                        .withIdleTimeout(flowTimeout)
-                        .forDevice(dst.location().deviceId())
-                        .withSelector(builderSelector.build())
-                        .withTreatment(treatment)
-                        .fromApp(appId)
-                        .forTable(TABLE_ID)
-                        .build();
-                flowRuleService.applyFlowRules(flowRule);
-                policyService.addFlowRule(policy, flowRule);
+                            builderSelector = policyParser.intraBuildTrafficSelector(pkt,
+                                    ethPkt,
+                                    null,
+                                    policy);
+                            if (builderSelector != null) {
+                                treatment = DefaultTrafficTreatment.
+                                        builder()
+                                        .setOutput(dst.location().port())
+                                        .build();
+                                DefaultFlowRule flowRule;
+                                flowRule = (DefaultFlowRule) DefaultFlowRule.builder()
+                                        .withPriority(policy.getPriority())
+                                        .withIdleTimeout(flowTimeout)
+                                        .forDevice(dst.location().deviceId())
+                                        .withSelector(builderSelector.build())
+                                        .withTreatment(treatment)
+                                        .fromApp(appId)
+                                        .forTable(TABLE_ID)
+                                        .build();
+                                flowRuleService.applyFlowRules(flowRule);
+                                policyService.addFlowRule(policy, flowRule);
 
-            }
+                            }
+                            /*try {
+                                Thread.sleep(5 * policyService.getRulesCount(policy));
 
-            forwardPacketToDst(context, dst.location());
-        } else {
-            Set<Path> endToEndPaths =
-                    topologyService.getPaths(topologyService.currentTopology(),
-                            src.location().deviceId(),
-                            dst.location().deviceId());
-            switch (policy.getPathSelectionAlgo()) {
-                case ON_DEMAND:
-                    endPath = pathSelection.getEndtoEndPath(endToEndPaths, policy);
-                    break;
-                case RANDOM:
-                    endPath = pathSelection.pickRandomPath(endToEndPaths, policy);
-                    break;
-                case BEST_POSSIBLE_PATH:
-                    endPath = pathSelection.getEndtoEndPath(endToEndPaths, policy);
-                    break;
-                default:
-                    endPath = pathSelection.getEndtoEndPath(endToEndPaths, policy);
-                    break;
-            }
-            pathLinks = endPath.links();
-            int priority = policy.getPriority();
-            Link lastLink = pathLinks.get(pathLinks.size() - 1);
-            Link firstLink = pathLinks.get(0);
-            for (Link link : pathLinks) {
-                builderSelector = policyParser.intraBuildTrafficSelector(pkt,
-                        ethPkt,
-                        link,
-                        policy);
-                if (builderSelector != null) {
-                    treatment = DefaultTrafficTreatment.
-                            builder()
-                            .setOutput(link.src().port())
-                            .build();
-                    DefaultFlowRule flowRule;
-                    flowRule = (DefaultFlowRule) DefaultFlowRule.builder()
-                            .withPriority(priority)
-                            .withIdleTimeout(flowTimeout)
-                            .forDevice(link.src().deviceId())
-                            .withSelector(builderSelector.build())
-                            .withTreatment(treatment)
-                            .fromApp(appId)
-                            .forTable(TABLE_ID)
-                            .build();
-
-                    log.info(flowRule.toString());
-                    flowRuleService.applyFlowRules(flowRule);
-                    policyService.addFlowRule(policy, flowRule);
-                    if (lastLink.equals(link)) {
-                        treatment = DefaultTrafficTreatment.
-                                builder()
-                                .setOutput(dst.location().port())
-                                .build();
-                        flowRule = (DefaultFlowRule) DefaultFlowRule.builder()
-                                .withPriority(priority)
-                                .withIdleTimeout(flowTimeout)
-                                .forDevice(dst.location().deviceId())
-                                .withSelector(builderSelector.build())
-                                .withTreatment(treatment)
-                                .fromApp(appId)
-                                .forTable(TABLE_ID)
-                                .build();
-
-                        flowRuleService.applyFlowRules(flowRule);
-                        policyService.addFlowRule(policy, flowRule);
-
-                    }
-                }
-            }
+                            } catch (InterruptedException e) {
+                                log.info(e.getLocalizedMessage());
+                            }*/
 
 
-            forwardPacketToDst(context, firstLink.src());
 
+                            //context.treatmentBuilder().setOutput(dst.location().port());
+                            //context.send();
+                            forwardPacketToDst(context,dst.location());
+                        } else {
+                            Set<Path> endToEndPaths =
+                                    topologyService.getPaths(topologyService.currentTopology(),
+                                            src.location().deviceId(),
+                                            dst.location().deviceId());
+                            switch (policy.getPathSelectionAlgo()) {
+                                case ON_DEMAND:
+                                    endPath = pathSelection.getEndtoEndPath(endToEndPaths, policy);
+                                    break;
+                                case RANDOM:
+                                    endPath = pathSelection.pickRandomPath(endToEndPaths, policy);
+                                    break;
+                                case BEST_POSSIBLE_PATH:
+                                    endPath = pathSelection.getEndtoEndPath(endToEndPaths, policy);
+                                    break;
+                                default:
+                                    endPath = pathSelection.getEndtoEndPath(endToEndPaths, policy);
+                                    break;
+                            }
+                            pathLinks = endPath.links();
+                            int priority = policy.getPriority();
+                            Link lastLink = pathLinks.get(pathLinks.size() - 1);
+                            Link firstLink = pathLinks.get(0);
+                            for (Link link : pathLinks) {
+                                builderSelector = policyParser.intraBuildTrafficSelector(pkt,
+                                        ethPkt,
+                                        link,
+                                        policy);
+                                if (builderSelector != null) {
+                                    treatment = DefaultTrafficTreatment.
+                                            builder()
+                                            .setOutput(link.src().port())
+                                            .build();
+                                    DefaultFlowRule flowRule;
+                                    flowRule = (DefaultFlowRule) DefaultFlowRule.builder()
+                                            .withPriority(priority)
+                                            .withIdleTimeout(flowTimeout)
+                                            .forDevice(link.src().deviceId())
+                                            .withSelector(builderSelector.build())
+                                            .withTreatment(treatment)
+                                            .fromApp(appId)
+                                            .forTable(TABLE_ID)
+                                            .build();
 
-        }
+                                    flowRuleService.applyFlowRules(flowRule);
+                                    policyService.addFlowRule(policy, flowRule);
+                                    if (lastLink.equals(link)) {
+                                        treatment = DefaultTrafficTreatment.
+                                            builder()
+                                            .setOutput(dst.location().port())
+                                            .build();
+                                        flowRule = (DefaultFlowRule) DefaultFlowRule.builder()
+                                            .withPriority(priority)
+                                            .withIdleTimeout(flowTimeout)
+                                            .forDevice(dst.location().deviceId())
+                                            .withSelector(builderSelector.build())
+                                            .withTreatment(treatment)
+                                            .fromApp(appId)
+                                            .forTable(TABLE_ID)
+                                            .build();
+
+                                        flowRuleService.applyFlowRules(flowRule);
+                                        policyService.addFlowRule(policy, flowRule);
+
+                                    }
+                                }
+                            }
+
+                            /*try {
+                                Thread.sleep(5 * policyService.getRulesCount(policy));
+
+                            } catch (InterruptedException e) {
+                                log.info(e.getLocalizedMessage());
+                            }*/
+
+                            forwardPacketToDst(context,firstLink.src());
+                            //context.treatmentBuilder().setOutput(firstLink.src().port());
+                            //context.send();
+
+                        }
 
     }
 
